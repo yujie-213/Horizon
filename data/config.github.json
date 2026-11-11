@@ -35,6 +35,13 @@
         "repo": "vllm",
         "enabled": true,
         "profile": "tech-news"
+      },
+      {
+        "type": "repo_releases",
+        "owner": "langchain-ai",
+        "repo": "langgraph",
+        "enabled": true,
+        "profile": "tech-news"
       }
     ],
     "hackernews": {
@@ -68,10 +75,19 @@
       }
     ],
     "reddit": {
-      "enabled": false,
+      "enabled": true,
       "subreddits": [
         {
           "subreddit": "MachineLearning",
+          "enabled": true,
+          "sort": "hot",
+          "time_filter": "day",
+          "fetch_limit": 10,
+          "min_score": 60,
+          "profile": "tech-news"
+        },
+        {
+          "subreddit": "LocalLLaMA",
           "enabled": true,
           "sort": "hot",
           "time_filter": "day",
