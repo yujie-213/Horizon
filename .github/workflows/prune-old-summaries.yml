@@ -1,0 +1,60 @@
+name: Prune old summaries
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'List files that would be deleted without deleting them'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v6
+        with:
+          ref: gh-pages
+          fetch-depth: 0
+      - name: Delete summaries older than 30 days
+        env:
+          DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          cutoff=$(date -d '30 days ago' +%F)
+          echo "Cutoff date: $cutoff (files dated before this will be pruned)"
+          echo "Dry run: $DRY_RUN"
+          deleted=0
+          for f in _posts/*-summary-zh.md _posts/*-summary-en.md; do
+            [ -e "$f" ] || continue
+            base=$(basename "$f")
+            d=${base%%-summary-*}
+            case "$d" in
+              [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+              *) echo "Skipping unexpected name: $f"; continue ;;
+            esac
+            if [[ "$d" < "$cutoff" ]]; then
+              echo "Would delete: $f"
+              if [ "$DRY_RUN" != "true" ]; then
+                rm -- "$f"
+                deleted=$((deleted + 1))
+              fi
+            fi
+          done
+          echo "Deleted $deleted file(s)."
+          if [ "$DRY_RUN" != "true" ] && [ "$deleted" -gt 0 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add _posts
+            git commit -m "Prune summaries older than 30 days (before $cutoff)"
+            git push
+          else
+            echo "No commit needed."
+          fi
