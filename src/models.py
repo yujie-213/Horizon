@@ -203,6 +203,12 @@ class AIConfig(BaseModel):
     temperature: float = 0.3
     max_tokens: int = 4096
     throttle_sec: float = 0.0
+    # Minimum seconds between the start of any two AI calls, enforced in
+    # every concrete client's complete() so analysis, enrichment and
+    # retries share one limiter. 0 disables it; set 5 in the config to
+    # stay under Gemini free-tier 15 requests/min (60 / 15 = 4s per
+    # request) with margin.
+    min_call_interval_sec: float = 0.0
     analysis_concurrency: int = 1
     enrichment_concurrency: int = 1
     languages: List[str] = Field(default_factory=lambda: ["en"])

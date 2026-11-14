@@ -1,7 +1,9 @@
 """AI client abstraction supporting multiple providers."""
 
+import asyncio
 import os
 import re
+import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from openai import AsyncAzureOpenAI, AsyncOpenAI, APIStatusError as OpenAIStatusError
@@ -150,6 +152,35 @@ class AIClient(ABC):
         pass
 
 
+# Shared rate limiter: one limiter per process, because the provider's
+# requests/minute quota is per account, not per client instance. The
+# per-phase throttle (throttle_sec) only spaces calls inside the analysis
+# phase; the enricher makes several calls per item (tool plan, one
+# artifact per language, one call per tool-backed block) with no gaps, so
+# without this the enrichment phase could burst past the limit.
+_RATE_LIMIT_LOCK = asyncio.Lock()
+_RATE_LIMIT_LAST_START: Optional[float] = None
+
+
+async def _wait_for_rate_limit(min_interval_sec: float) -> None:
+    """Wait until at least min_interval_sec passed since the last AI call.
+
+    No-op when min_interval_sec is 0 (the default): limiting is opt-in
+    via ai.min_call_interval_sec in the config.
+    """
+    if min_interval_sec <= 0:
+        return
+    global _RATE_LIMIT_LAST_START
+    async with _RATE_LIMIT_LOCK:
+        now = time.monotonic()
+        if _RATE_LIMIT_LAST_START is not None:
+            wait = min_interval_sec - (now - _RATE_LIMIT_LAST_START)
+            if wait > 0:
+                await asyncio.sleep(wait)
+                now = time.monotonic()
+        _RATE_LIMIT_LAST_START = now
+
+
 class AnthropicClient(AIClient):
     """Client for Anthropic-compatible models."""
 
@@ -191,6 +222,7 @@ class AnthropicClient(AIClient):
         Returns:
             str: Generated text
         """
+        await _wait_for_rate_limit(self.config.min_call_interval_sec)
         temperature = self.temperature if temperature is None else temperature
         max_tokens = self.max_tokens if max_tokens is None else max_tokens
 
@@ -308,6 +340,7 @@ class OpenAIClient(AIClient):
         Returns:
             str: Generated text
         """
+        await _wait_for_rate_limit(self.config.min_call_interval_sec)
         temperature = self.temperature if temperature is None else temperature
         max_tokens = self.max_tokens if max_tokens is None else max_tokens
 
@@ -441,6 +474,7 @@ class AzureOpenAIClient(AIClient):
         Returns:
             str: Generated text
         """
+        await _wait_for_rate_limit(self.config.min_call_interval_sec)
         temperature = self.temperature if temperature is None else temperature
         max_tokens = self.max_tokens if max_tokens is None else max_tokens
 
@@ -551,6 +585,7 @@ class GeminiClient(AIClient):
         Returns:
             str: Generated text
         """
+        await _wait_for_rate_limit(self.config.min_call_interval_sec)
         temperature = self.temperature if temperature is None else temperature
         max_tokens = self.max_tokens if max_tokens is None else max_tokens
 
@@ -709,6 +744,7 @@ def _create_chained_client(config: AIConfig) -> ChainedAIClient:
             temperature=config.temperature,
             max_tokens=config.max_tokens,
             throttle_sec=config.throttle_sec,
+            min_call_interval_sec=config.min_call_interval_sec,
             analysis_concurrency=config.analysis_concurrency,
             enrichment_concurrency=config.enrichment_concurrency,
             languages=config.languages,

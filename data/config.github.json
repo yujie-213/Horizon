@@ -6,6 +6,7 @@
     "temperature": 0.3,
     "max_tokens": 8192,
     "throttle_sec": 15,
+    "min_call_interval_sec": 5,
     "languages": [
       "zh",
       "en"

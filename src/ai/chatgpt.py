@@ -8,7 +8,7 @@ import httpx
 from openai import APIConnectionError, APIError, AsyncOpenAI
 
 from .chatgpt_auth import ChatGPTAuth, RESOURCE, api_error
-from .client import AIClient
+from .client import AIClient, _wait_for_rate_limit
 from .errors import AIProviderUnavailableError
 from .tokens import record_usage
 from ..models import AIConfig
@@ -35,6 +35,7 @@ class ChatGPTClient(AIClient):
         self, system: str, user: str,
         temperature: float | None = None, max_tokens: int | None = None,
     ) -> str:
+        await _wait_for_rate_limit(self.config.min_call_interval_sec)
         # These common interface options are unsupported by the plan-usage preview.
         # Never forward them, extra_body, or a Chat Completions system message.
         if self._blocked is not None:
